@@ -64,13 +64,13 @@ pipeline {
                     dir('client') {
                         sh """
                             docker build \\
-                            --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} \\
-                            --build-arg VITE_CURRENCY=${VITE_CURRENCY} \\
-                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=${CLERK_KEY} \\
-                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=${STRIPE_KEY} \\
-                            -t ${CLIENT_IMAGE}:${IMAGE_TAG} \\
-                            -t ${CLIENT_IMAGE}:latest \\
-                            .
+                                --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} \\
+                                --build-arg VITE_CURRENCY=${VITE_CURRENCY} \\
+                                --build-arg VITE_CLERK_PUBLISHABLE_KEY=${CLERK_KEY} \\
+                                --build-arg VITE_STRIPE_PUBLISHABLE_KEY=${STRIPE_KEY} \\
+                                -t ${CLIENT_IMAGE}:${IMAGE_TAG} \\
+                                -t ${CLIENT_IMAGE}:latest \\
+                                .
                         """
                     }
                 }
@@ -90,9 +90,9 @@ pipeline {
                     dir('server') {
                         sh """
                             docker build \\
-                            -t ${SERVER_IMAGE}:${IMAGE_TAG} \\
-                            -t ${SERVER_IMAGE}:latest \\
-                            .
+                                -t ${SERVER_IMAGE}:${IMAGE_TAG} \\
+                                -t ${SERVER_IMAGE}:latest \\
+                                .
                         """
                     }
                 }
@@ -111,11 +111,13 @@ pipeline {
                 script {
                     sh """
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
-                        aquasec/trivy:latest image ${SERVER_IMAGE}:latest --exit-code 0 --severity HIGH,CRITICAL --format table
+                            aquasec/trivy:latest image --skip-db-update --skip-java-db-update ${SERVER_IMAGE}:latest \\
+                            --exit-code 0 --severity HIGH,CRITICAL --format table
                     """
                     sh """
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
-                        aquasec/trivy:latest image ${CLIENT_IMAGE}:latest --exit-code 0 --severity HIGH,CRITICAL --format table
+                            aquasec/trivy:latest image --skip-db-update --skip-java-db-update ${CLIENT_IMAGE}:latest \\
+                            --exit-code 0 --severity HIGH,CRITICAL --format table
                     """
                 }
             }
@@ -134,10 +136,10 @@ pipeline {
                     // Test backend health endpoint
                     sh """
                         docker run -d --name test-backend -p 3000:3000 \\
-                        -e CLERK_PUBLISHABLE_KEY=test-key \\
-                        -e CLERK_SECRET_KEY=test-secret \\
-                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test \\
-                        ${SERVER_IMAGE}:latest
+                            -e CLERK_PUBLISHABLE_KEY=test-key \\
+                            -e CLERK_SECRET_KEY=test-secret \\
+                            -e MONGODB_URI=mongodb://test:test@localhost:27017/test \\
+                            ${SERVER_IMAGE}:latest
                         
                         sleep 10
                         curl -f http://localhost:3000/health || echo "Health check failed"
@@ -305,7 +307,8 @@ pipeline {
             steps {
                 echo '🚀 Applying Terraform changes...'
                 script {
-                    input message: '⚠ Approve Terraform Apply? This will create AWS resources and incur costs!', ok: 'Deploy'
+                    input message: '⚠ Approve Terraform Apply? This will create AWS resources and incur costs!', 
+                          ok: 'Deploy'
                 }
                 dir('terraform') {
                     withCredentials([
@@ -398,7 +401,8 @@ pipeline {
                     
                     echo '=== Testing Application Health ==='
                     sh '''
-                        kubectl run test-curl --image=curlimages/curl:8.5.0 -n hotel-app --rm -i --restart=Never -- /bin/sh -c "curl -f http://backend:5000/health && echo \"Backend health: OK\" || echo \"Backend health: FAILED\""
+                        kubectl run test-curl --image=curlimages/curl:8.5.0 -n hotel-app --rm -i --restart=Never -- \
+                            /bin/sh -c "curl -f http://backend:5000/health && echo \"Backend health: OK\" || echo \"Backend health: FAILED\""
                     '''
                 }
             }
@@ -413,7 +417,8 @@ pipeline {
             steps {
                 echo '🗑 Destroying Terraform infrastructure...'
                 script {
-                    input message: '⚠⚠⚠ Are you ABSOLUTELY SURE you want to DESTROY all resources? This cannot be undone!', ok: 'Yes, Destroy Everything'
+                    input message: '⚠⚠⚠ Are you ABSOLUTELY SURE you want to DESTROY all resources? This cannot be undone!', 
+                          ok: 'Yes, Destroy Everything'
                 }
                 dir('terraform') {
                     withCredentials([

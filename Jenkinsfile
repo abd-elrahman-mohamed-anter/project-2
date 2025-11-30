@@ -5,38 +5,33 @@ pipeline {
         choice(
             name: 'PIPELINE_ACTION',
             choices: ['docker-only', 'terraform-plan', 'terraform-apply', 'terraform-destroy', 'full-deploy'],
-            description: 'Select pipeline action: docker-only (Phase 3), terraform-plan/apply/destroy (Phase 4), or full-deploy (both)'
+            description: 'Select pipeline action'
         )
     }
 
     environment {
-        // Docker Hub credentials
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
         DOCKERHUB_USERNAME = 'mennaomar12'
         CLIENT_IMAGE = "${DOCKERHUB_USERNAME}/hotel-client"
         SERVER_IMAGE = "${DOCKERHUB_USERNAME}/hotel-server"
         IMAGE_TAG = "${BUILD_NUMBER}"
 
-        // Frontend environment variables
         VITE_BACKEND_URL = 'http://localhost:3000'
         VITE_CURRENCY = '$'
         CLERK_KEY = credentials('clerk-publishable-key')
         STRIPE_KEY = credentials('stripe-publishable-key')
 
-        // AWS Configuration for Terraform
         AWS_DEFAULT_REGION = 'us-east-1'
 
-        // Terraform variables - using the images we just built
         TF_VAR_backend_image = "${SERVER_IMAGE}:latest"
         TF_VAR_frontend_image = "${CLIENT_IMAGE}:latest"
     }
 
     stages {
-        // ==================== PHASE 3: DOCKER BUILD & PUSH ====================
 
         stage('Checkout') {
             steps {
-                echo '📥 Checking out code from GitHub...'
+                echo '📥 Checking out code...'
                 checkout scm
             }
         }
@@ -44,417 +39,208 @@ pipeline {
         stage('Verify Structure') {
             steps {
                 echo '📂 Checking repository structure...'
-                bat 'dir'
-                bat 'if exist client (echo Client folder found) else (echo ERROR: Client folder NOT found)'
-                bat 'if exist server (echo Server folder found) else (echo ERROR: Server folder NOT found)'
-                bat 'if exist terraform (echo Terraform folder found) else (echo WARNING: Terraform folder NOT found - will skip terraform stages)'
+                sh '''
+                    ls -la
+                    [ -d client ] && echo "Client found" || echo "Client NOT found"
+                    [ -d server ] && echo "Server found" || echo "Server NOT found"
+                    [ -d terraform ] && echo "Terraform found" || echo "Terraform NOT found"
+                '''
             }
         }
 
         stage('Build Client Image') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
             steps {
-                echo '🔨 Building Frontend Docker Image...'
-                script {
-                    dir('client') {
-                        bat """
-                            docker build ^
-                            --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% ^
-                            --build-arg VITE_CURRENCY=%VITE_CURRENCY% ^
-                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=%CLERK_KEY% ^
-                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=%STRIPE_KEY% ^
-                            -t %CLIENT_IMAGE%:%IMAGE_TAG% ^
-                            -t %CLIENT_IMAGE%:latest ^
-                            .
-                        """
-                    }
+                echo '🔨 Building Client Image...'
+                dir('client') {
+                    sh """
+                        docker build \
+                            --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} \
+                            --build-arg VITE_CURRENCY=${VITE_CURRENCY} \
+                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=${CLERK_KEY} \
+                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=${STRIPE_KEY} \
+                            -t ${CLIENT_IMAGE}:${IMAGE_TAG} \
+                            -t ${CLIENT_IMAGE}:latest .
+                    """
                 }
             }
         }
 
         stage('Build Server Image') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
             steps {
-                echo '🔨 Building Backend Docker Image...'
-                script {
-                    dir('server') {
-                        bat """
-                            docker build ^
-                            -t %SERVER_IMAGE%:%IMAGE_TAG% ^
-                            -t %SERVER_IMAGE%:latest ^
-                            .
-                        """
-                    }
+                echo '🔨 Building Server Image...'
+                dir('server') {
+                    sh """
+                        docker build \
+                            -t ${SERVER_IMAGE}:${IMAGE_TAG} \
+                            -t ${SERVER_IMAGE}:latest .
+                    """
                 }
             }
         }
 
-        stage('Security Scan - Container Images') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+        stage('Security Scan') {
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
             steps {
-                echo '🔍 Running Security Scan on Docker Images...'
-                script {
-                    bat """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
-                        aquasec/trivy:latest image %SERVER_IMAGE%:latest --exit-code 0 --severity HIGH,CRITICAL --format table
-                    """
-                    bat """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
-                        aquasec/trivy:latest image %CLIENT_IMAGE%:latest --exit-code 0 --severity HIGH,CRITICAL --format table
-                    """
-                }
+                echo '🔍 Scanning Images with Trivy...'
+                sh """
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy:latest image ${SERVER_IMAGE}:latest
+                """
+
+                sh """
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy:latest image ${CLIENT_IMAGE}:latest
+                """
             }
         }
 
         stage('Test Containers') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
             steps {
-                echo '🧪 Testing Docker Containers...'
-                script {
-                    bat """
-                        docker run -d --name test-backend -p 3000:3000 ^
-                        -e CLERK_PUBLISHABLE_KEY=test-key ^
-                        -e CLERK_SECRET_KEY=test-secret ^
-                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test ^
-                        %SERVER_IMAGE%:latest
+                echo '🧪 Testing Backend Container...'
+                sh """
+                    docker run -d --name test-backend -p 3000:3000 \
+                        -e CLERK_PUBLISHABLE_KEY=test \
+                        -e CLERK_SECRET_KEY=test \
+                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test \
+                        ${SERVER_IMAGE}:latest
 
-                        timeout /t 10 /nobreak
-                        curl -f http://localhost:3000/health || echo "Health check failed"
-                        docker stop test-backend
-                        docker rm test-backend
-                    """
-                }
-            }
-        }
-
-        stage('Login to Docker Hub') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
-            steps {
-                echo '🔐 Logging into Docker Hub...'
-                bat "echo %DOCKERHUB_CREDENTIALS_PSW% | docker login -u %DOCKERHUB_CREDENTIALS_USR% --password-stdin"
-            }
-        }
-
-        stage('Push Images to Docker Hub') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
-            steps {
-                echo '📤 Pushing images to Docker Hub...'
-                bat """
-                    docker push %CLIENT_IMAGE%:%IMAGE_TAG%
-                    docker push %CLIENT_IMAGE%:latest
-                    docker push %SERVER_IMAGE%:%IMAGE_TAG%
-                    docker push %SERVER_IMAGE%:latest
+                    sleep 10
+                    curl -f http://localhost:3000/health || echo 'Health check failed'
+                    docker stop test-backend
+                    docker rm test-backend
                 """
             }
         }
 
-        stage('Docker Cleanup') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'docker-only' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+        stage('Login to DockerHub') {
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
             steps {
-                echo '🧹 Cleaning up local Docker images...'
-                bat """
-                    docker rmi %CLIENT_IMAGE%:%IMAGE_TAG% 2>nul || echo "Client image already removed"
-                    docker rmi %CLIENT_IMAGE%:latest 2>nul || echo "Client latest image already removed"
-                    docker rmi %SERVER_IMAGE%:%IMAGE_TAG% 2>nul || echo "Server image already removed"
-                    docker rmi %SERVER_IMAGE%:latest 2>nul || echo "Server latest image already removed"
-                    docker system prune -f 2>nul || echo "Docker prune failed"
+                sh """
+                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
                 """
             }
         }
 
-        // ==================== PHASE 4: TERRAFORM DEPLOYMENT ====================
-
-        stage('Setup AWS & Terraform Credentials') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION != 'docker-only'
-                }
-            }
+        stage('Push Images') {
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
             steps {
-                echo '🔑 Setting up AWS and Terraform credentials...'
-                script {
-                    echo '✅ Loading credentials from Jenkins Credential Store...'
-                }
+                sh """
+                    docker push ${CLIENT_IMAGE}:${IMAGE_TAG}
+                    docker push ${CLIENT_IMAGE}:latest
+                    docker push ${SERVER_IMAGE}:${IMAGE_TAG}
+                    docker push ${SERVER_IMAGE}:latest
+                """
             }
         }
+
+        stage('Clean Docker') {
+            when { expression { params.PIPELINE_ACTION in ['docker-only', 'full-deploy'] } }
+            steps {
+                sh """
+                    docker rmi ${CLIENT_IMAGE}:${IMAGE_TAG} || true
+                    docker rmi ${CLIENT_IMAGE}:latest || true
+                    docker rmi ${SERVER_IMAGE}:${IMAGE_TAG} || true
+                    docker rmi ${SERVER_IMAGE}:latest || true
+                    docker system prune -f || true
+                """
+            }
+        }
+
+        // ============ TERRAFORM ============
 
         stage('Terraform Init') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION != 'docker-only'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION != 'docker-only' } }
             steps {
-                echo '🔧 Initializing Terraform...'
                 dir('terraform') {
                     withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                        string(credentialsId:'aws-access-key-id', variable:'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId:'aws-secret-access-key', variable:'AWS_SECRET_ACCESS_KEY')
                     ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                        sh """
+                            export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+                            export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
                             terraform init -upgrade
-                        '''
+                        """
                     }
                 }
             }
         }
 
         stage('Terraform Validate') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION != 'docker-only'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION != 'docker-only' } }
             steps {
-                echo '✔ Validating Terraform configuration...'
                 dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            terraform validate
-                        '''
-                    }
+                    sh "terraform validate"
                 }
             }
         }
 
         stage('Terraform Plan') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-plan' ||
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['terraform-plan','terraform-apply','full-deploy'] } }
             steps {
-                echo '📋 Running Terraform Plan...'
                 dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                        string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
-                        string(credentialsId: 'clerk-publishable-key', variable: 'CLERK_PUBLISHABLE_KEY'),
-                        string(credentialsId: 'clerk-secret-key', variable: 'CLERK_SECRET_KEY')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
-                            set TF_VAR_jwt_secret=%JWT_SECRET%
-                            set TF_VAR_clerk_publishable_key=%CLERK_PUBLISHABLE_KEY%
-                            set TF_VAR_clerk_secret_key=%CLERK_SECRET_KEY%
-                            set TF_VAR_backend_image=%SERVER_IMAGE%:latest
-                            set TF_VAR_frontend_image=%CLIENT_IMAGE%:latest
-                            terraform plan -out=tfplan -detailed-exitcode
-                        '''
-                    }
+                    sh """
+                        terraform plan -out=tfplan
+                    """
                 }
             }
         }
 
         stage('Terraform Apply') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['terraform-apply','full-deploy'] } }
             steps {
-                echo '🚀 Applying Terraform changes...'
-                script {
-                    input message: '⚠ Approve Terraform Apply? This will create AWS resources and incur costs!', ok: 'Deploy'
-                }
+                input message: 'Deploy Terraform?', ok: 'Apply'
                 dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                        string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
-                        string(credentialsId: 'clerk-publishable-key', variable: 'CLERK_PUBLISHABLE_KEY'),
-                        string(credentialsId: 'clerk-secret-key', variable: 'CLERK_SECRET_KEY')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
-                            set TF_VAR_jwt_secret=%JWT_SECRET%
-                            set TF_VAR_clerk_publishable_key=%CLERK_PUBLISHABLE_KEY%
-                            set TF_VAR_clerk_secret_key=%CLERK_SECRET_KEY%
-                            set TF_VAR_backend_image=%SERVER_IMAGE%:latest
-                            set TF_VAR_frontend_image=%CLIENT_IMAGE%:latest
-                            terraform apply -auto-approve tfplan
-                        '''
-                    }
+                    sh "terraform apply -auto-approve tfplan"
                 }
             }
         }
 
         stage('Configure kubectl') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['terraform-apply','full-deploy'] } }
             steps {
-                echo '⚙ Configuring kubectl...'
                 dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            for /f "tokens=*" %%i in ('terraform output -raw cluster_name') do set CLUSTER_NAME=%%i
-                            aws eks update-kubeconfig --region us-east-1 --name %CLUSTER_NAME%
-                        '''
-                    }
+                    sh """
+                        CLUSTER=$(terraform output -raw cluster_name)
+                        aws eks update-kubeconfig --region us-east-1 --name $CLUSTER
+                    """
                 }
             }
         }
 
         stage('Deploy Security Policies') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION in ['terraform-apply','full-deploy'] } }
             steps {
-                echo '🛡 Deploying Security Policies...'
                 dir('k8s') {
-                    bat 'kubectl apply -f security/network-policies.yaml -n hotel-app'
-                    bat 'kubectl apply -f security/pod-security.yaml -n hotel-app'
-                    bat 'kubectl apply -f auto-scaling/hpa.yaml -n hotel-app'
+                    sh """
+                        kubectl apply -f security/network-policies.yaml -n hotel-app
+                        kubectl apply -f security/pod-security.yaml -n hotel-app
+                        kubectl apply -f auto-scaling/hpa.yaml -n hotel-app
+                    """
                 }
             }
         }
 
-        stage('Verify Kubernetes Deployment') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
+        stage('Verify Deployment') {
+            when { expression { params.PIPELINE_ACTION in ['terraform-apply','full-deploy'] } }
             steps {
-                echo '🔍 Verifying Kubernetes deployment...'
-                script {
-                    echo 'Waiting for pods to be ready (this may take 5-10 minutes)...'
-                    bat '''
-                        kubectl wait --for=condition=ready pod -l app=mongodb -n hotel-app --timeout=600s || echo "MongoDB pods not ready yet"
-                        kubectl wait --for=condition=ready pod -l app=backend -n hotel-app --timeout=600s || echo "Backend pods not ready yet"
-                        kubectl wait --for=condition=ready pod -l app=frontend -n hotel-app --timeout=600s || echo "Frontend pods not ready yet"
-                    '''
-
-                    echo '=== Application Status ==='
-                    bat 'kubectl get pods -n hotel-app'
-                    bat 'kubectl get svc -n hotel-app'
-                    bat 'kubectl get ingress -n hotel-app'
-
-                    echo '=== Testing Application Health ==='
-                    bat '''
-                        kubectl run test-curl --image=curlimages/curl:8.5.0 -n hotel-app --rm -i --restart=Never -- /bin/sh -c "curl -f http://backend:5000/health && echo 'Backend health: OK' || echo 'Backend health: FAILED'"
-                    '''
-                }
+                sh """
+                    kubectl get pods -n hotel-app
+                    kubectl get svc -n hotel-app
+                    kubectl get ingress -n hotel-app
+                """
             }
         }
 
         stage('Terraform Destroy') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-destroy'
-                }
-            }
+            when { expression { params.PIPELINE_ACTION == 'terraform-destroy' } }
             steps {
-                echo '🗑 Destroying Terraform infrastructure...'
-                script {
-                    input message: '⚠⚠⚠ Are you ABSOLUTELY SURE you want to DESTROY all resources? This cannot be undone!', ok: 'Yes, Destroy Everything'
-                }
+                input message: 'Destroy ALL resources?', ok: 'Destroy'
                 dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                        string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
-                            set TF_VAR_jwt_secret=%JWT_SECRET%
-                            set TF_VAR_backend_image=%SERVER_IMAGE%:latest
-                            set TF_VAR_frontend_image=%CLIENT_IMAGE%:latest
-                            terraform destroy -auto-approve
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Display Terraform Outputs') {
-            when {
-                expression {
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
-            steps {
-                echo '📊 Terraform Outputs:'
-                dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            terraform output
-                        '''
-                    }
+                    sh "terraform destroy -auto-approve"
                 }
             }
         }
@@ -462,63 +248,13 @@ pipeline {
 
     post {
         always {
-            echo "🏁 Pipeline execution completed"
+            echo "🏁 Pipeline finished."
         }
-
         success {
-            script {
-                echo '✅✅✅ Pipeline completed successfully! ✅✅✅'
-                echo "================================================"
-
-                if (params.PIPELINE_ACTION == 'docker-only') {
-                    echo "PHASE 3 COMPLETED - Docker Images Pushed"
-                    echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
-                    echo "Server Image: ${SERVER_IMAGE}:${IMAGE_TAG}"
-                    echo "✅ Security scans completed"
-                    echo "✅ Container tests passed"
-                    echo "✅ Images pushed to Docker Hub"
-                }
-
-                if (params.PIPELINE_ACTION == 'terraform-plan') {
-                    echo "PHASE 4 - Terraform Plan Completed"
-                    echo "Review the plan above and run 'terraform-apply' to deploy"
-                }
-
-                if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'full-deploy') {
-                    echo "PHASE 4 COMPLETED - Kubernetes Deployment Successful"
-                    echo ""
-                    echo "🎉 Your application is now deployed on Kubernetes!"
-                    echo ""
-                    echo "🛡 Security Features Enabled:"
-                    echo "  - Network Policies"
-                    echo "  - Pod Security Context"
-                    echo "  - Auto-scaling (HPA)"
-                    echo ""
-                    echo "✅ Application Health:"
-                    echo "  Health checks: http://backend:5000/health"
-                    echo ""
-                    echo "To access your application:"
-                    echo "  kubectl get ingress -n hotel-app"
-                }
-
-                if (params.PIPELINE_ACTION == 'terraform-destroy') {
-                    echo "TERRAFORM DESTROY COMPLETED"
-                    echo "All AWS resources have been destroyed"
-                    echo "Your AWS bill will stop accumulating charges"
-                }
-
-                echo "================================================"
-            }
+            echo "✅ SUCCESS"
         }
-
         failure {
-            echo '❌❌❌ Pipeline failed! ❌❌❌'
-            echo 'Check the logs above for error details'
-        }
-
-        unstable {
-            echo '⚠⚠⚠ Pipeline completed with warnings ⚠⚠⚠'
-            echo 'Some security scans may have found issues'
+            echo "❌ FAILED"
         }
     }
 }

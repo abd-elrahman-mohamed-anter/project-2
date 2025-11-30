@@ -1,87 +1,63 @@
 services:
-  # MongoDB Service
   mongodb:
     image: mongo:7.0-jammy
     container_name: hotel-booking-mongodb
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
+    ports:
+      - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
       - hotel-booking-network
 
-  # Backend Service
   backend:
     image: hotel-back:latest
     container_name: hotel-booking-backend
     restart: unless-stopped
+    env_file:
+      - ./server/.env   # هنا backend هيقرأ الـ .env بتاع السيرفر
     ports:
       - "3000:3000"
-    env_file:
-      - ./server/.env
-    environment:
-      - NODE_ENV=production
     depends_on:
       - mongodb
     networks:
       - hotel-booking-network
 
-  # Frontend Service
   frontend:
     image: hotel-front:latest
     container_name: hotel-booking-frontend
     restart: unless-stopped
+    env_file:
+      - ./client/.env   # لو محتاج الـ frontend يقرأ الـ .env بتاعه
     ports:
       - "5000:80"
-    env_file:
-      - ./client/.env
     depends_on:
       - backend
     networks:
       - hotel-booking-network
 
-  # Prometheus Service
   prometheus:
     image: prom/prometheus:v2.45.0
     container_name: hotel-booking-prometheus
     restart: unless-stopped
     ports:
       - "9090:9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
-      - "--storage.tsdb.retention.time=7d"
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - hotel-booking-network
-    depends_on:
-      - backend
 
-  # Grafana Service
   grafana:
     image: grafana/grafana:10.2.3
     container_name: hotel-booking-grafana
     restart: unless-stopped
     ports:
       - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
     networks:
       - hotel-booking-network
-    depends_on:
-      - prometheus
 
 networks:
   hotel-booking-network:
@@ -89,5 +65,3 @@ networks:
 
 volumes:
   mongodb_data:
-  prometheus_data:
-  grafana_data:

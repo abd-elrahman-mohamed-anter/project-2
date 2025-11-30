@@ -1,0 +1,68 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Node.js Custom Dashboard",
+    "tags": ["nodejs", "prometheus"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "type": "graph",
+        "title": "HTTP Requests Total",
+        "targets": [
+          {
+            "expr": "sum by (method, status) (http_requests_total)",
+            "legendFormat": "{{method}} {{status}}",
+            "interval": ""
+          }
+        ],
+        "datasource": "prometheus"
+      },
+      {
+        "type": "graph",
+        "title": "CPU Usage (User Seconds)",
+        "targets": [
+          {
+            "expr": "process_cpu_user_seconds_total",
+            "legendFormat": "CPU User Seconds"
+          }
+        ],
+        "datasource": "prometheus"
+      },
+      {
+        "type": "graph",
+        "title": "Memory Usage",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes",
+            "legendFormat": "Resident Memory"
+          }
+        ],
+        "datasource": "prometheus"
+      },
+      {
+        "type": "graph",
+        "title": "Event Loop Lag",
+        "targets": [
+          {
+            "expr": "nodejs_eventloop_lag_seconds",
+            "legendFormat": "Event Loop Lag"
+          }
+        ],
+        "datasource": "prometheus"
+      },
+      {
+        "type": "graph",
+        "title": "GC Duration",
+        "targets": [
+          {
+            "expr": "nodejs_gc_duration_seconds",
+            "legendFormat": "GC Duration"
+          }
+        ],
+        "datasource": "prometheus"
+      }
+    ],
+    "schemaVersion": 36,
+    "version": 1
+  }
+}

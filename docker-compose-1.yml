@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  mongodb:
+    image: mongo:7.0-jammy
+    container_name: hotel-booking-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - hotel-booking-network
+
+  backend:
+    image: hotel-back:latest
+    container_name: hotel-booking-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./server/.env
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - mongodb
+    networks:
+      - hotel-booking-network
+
+  frontend:
+    image: hotel-front:latest
+    container_name: hotel-booking-frontend
+    restart: unless-stopped
+    ports:
+      - "5000:80"
+    env_file:
+      - ./client/.env
+    depends_on:
+      - backend
+    networks:
+      - hotel-booking-network
+
+networks:
+  hotel-booking-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:

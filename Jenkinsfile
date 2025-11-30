@@ -63,13 +63,13 @@ pipeline {
                 script {
                     dir('client') {
                         bat """
-                            docker build ^
-                            --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% ^
-                            --build-arg VITE_CURRENCY=%VITE_CURRENCY% ^
-                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=%CLERK_KEY% ^
-                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=%STRIPE_KEY% ^
-                            -t %CLIENT_IMAGE%:%IMAGE_TAG% ^
-                            -t %CLIENT_IMAGE%:latest ^
+                            docker build ^ 
+                            --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% ^ 
+                            --build-arg VITE_CURRENCY=%VITE_CURRENCY% ^ 
+                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=%CLERK_KEY% ^ 
+                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=%STRIPE_KEY% ^ 
+                            -t %CLIENT_IMAGE%:%IMAGE_TAG% ^ 
+                            -t %CLIENT_IMAGE%:latest ^ 
                             .
                         """
                     }
@@ -89,9 +89,9 @@ pipeline {
                 script {
                     dir('server') {
                         bat """
-                            docker build ^
-                            -t %SERVER_IMAGE%:%IMAGE_TAG% ^
-                            -t %SERVER_IMAGE%:latest ^
+                            docker build ^ 
+                            -t %SERVER_IMAGE%:%IMAGE_TAG% ^ 
+                            -t %SERVER_IMAGE%:latest ^ 
                             .
                         """
                     }
@@ -110,11 +110,11 @@ pipeline {
                 echo '🔍 Running Security Scan on Docker Images...'
                 script {
                     bat """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^ 
                         aquasec/trivy:latest image %SERVER_IMAGE%:latest --exit-code 0 --severity HIGH,CRITICAL --format table
                     """
                     bat """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^ 
                         aquasec/trivy:latest image %CLIENT_IMAGE%:latest --exit-code 0 --severity HIGH,CRITICAL --format table
                     """
                 }
@@ -131,12 +131,11 @@ pipeline {
             steps {
                 echo '🧪 Testing Docker Containers...'
                 script {
-                    // Test backend health endpoint
                     bat """
-                        docker run -d --name test-backend -p 3000:3000 ^
-                        -e CLERK_PUBLISHABLE_KEY=test-key ^
-                        -e CLERK_SECRET_KEY=test-secret ^
-                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test ^
+                        docker run -d --name test-backend -p 3000:3000 ^ 
+                        -e CLERK_PUBLISHABLE_KEY=test-key ^ 
+                        -e CLERK_SECRET_KEY=test-secret ^ 
+                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test ^ 
                         %SERVER_IMAGE%:latest
                         
                         timeout /t 10 /nobreak
@@ -357,7 +356,6 @@ pipeline {
             }
         }
         
-        
         stage('Deploy Security Policies') {
             when {
                 expression { 
@@ -396,9 +394,6 @@ pipeline {
                     bat 'kubectl get pods -n hotel-app'
                     bat 'kubectl get svc -n hotel-app'
                     bat 'kubectl get ingress -n hotel-app'
-                    
-                    echo '=== Monitoring Status ==='
-                    bat 'kubectl get pods -n monitoring'
                     
                     echo '=== Testing Application Health ==='
                     bat '''
@@ -466,68 +461,60 @@ pipeline {
     }
     
     post {
-    always {
-        echo "🏁 Pipeline execution completed"
-    }
-    
-    success {
-        script {
-            echo '✅✅✅ Pipeline completed successfully! ✅✅✅'
-            echo "================================================"
-            
-            if (params.PIPELINE_ACTION == 'docker-only') {
-                echo "PHASE 3 COMPLETED - Docker Images Pushed"
-                echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
-                echo "Server Image: ${SERVER_IMAGE}:${IMAGE_TAG}"
-                echo "✅ Security scans completed"
-                echo "✅ Container tests passed"
-                echo "✅ Images pushed to Docker Hub"
-            }
-            
-            if (params.PIPELINE_ACTION == 'terraform-plan') {
-                echo "PHASE 4 - Terraform Plan Completed"
-                echo "Review the plan above and run 'terraform-apply' to deploy"
-            }
-            
-            if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'full-deploy') {
-                echo "PHASE 4 COMPLETED - Kubernetes Deployment Successful"
-                echo ""
-                echo "🎉 Your application is now deployed on Kubernetes!"
-                echo ""
-                echo "📊 Monitoring Stack Deployed:"
-                echo "  - Prometheus: kubectl port-forward service/prometheus 9090:9090 -n hotel-app"
-                echo "  - Grafana: kubectl port-forward service/grafana 3000:3000 -n hotel-app"
-                echo ""
-                echo "🛡 Security Features Enabled:"
-                echo "  - Network Policies"
-                echo "  - Pod Security Context"
-                echo "  - Auto-scaling (HPA)"
-                echo ""
-                echo "✅ Application Health:"
-                echo "  Health checks: http://backend:5000/health"
-                echo ""
-                echo "To access your application:"
-                echo "  kubectl get ingress -n hotel-app"
-            }
-            
-            if (params.PIPELINE_ACTION == 'terraform-destroy') {
-                echo "TERRAFORM DESTROY COMPLETED"
-                echo "All AWS resources have been destroyed"
-                echo "Your AWS bill will stop accumulating charges"
-            }
-            
-            echo "================================================"
+        always {
+            echo "🏁 Pipeline execution completed"
         }
-    }
-    
-    failure {
-        echo '❌❌❌ Pipeline failed! ❌❌❌'
-        echo 'Check the logs above for error details'
-    }
-    
-    unstable {
-        echo '⚠⚠⚠ Pipeline completed with warnings ⚠⚠⚠'
-        echo 'Some security scans may have found issues'
-    }
-}
-}
+        
+        success {
+            script {
+                echo '✅✅✅ Pipeline completed successfully! ✅✅✅'
+                echo "================================================"
+                
+                if (params.PIPELINE_ACTION == 'docker-only') {
+                    echo "PHASE 3 COMPLETED - Docker Images Pushed"
+                    echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
+                    echo "Server Image: ${SERVER_IMAGE}:${IMAGE_TAG}"
+                    echo "✅ Security scans completed"
+                    echo "✅ Container tests passed"
+                    echo "✅ Images pushed to Docker Hub"
+                }
+                
+                if (params.PIPELINE_ACTION == 'terraform-plan') {
+                    echo "PHASE 4 - Terraform Plan Completed"
+                    echo "Review the plan above and run 'terraform-apply' to deploy"
+                }
+                
+                if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'full-deploy') {
+                    echo "PHASE 4 COMPLETED - Kubernetes Deployment Successful"
+                    echo ""
+                    echo "🎉 Your application is now deployed on Kubernetes!"
+                    echo ""
+                    echo "🛡 Security Features Enabled:"
+                    echo "  - Network Policies"
+                    echo "  - Pod Security Context"
+                    echo "  - Auto-scaling (HPA)"
+                    echo ""
+                    echo "✅ Application Health:"
+                    echo "  Health checks: http://backend:5000/health"
+                    echo ""
+                    echo "To access your application:"
+                    echo "  kubectl get ingress -n hotel-app"
+                }
+                
+                if (params.PIPELINE_ACTION == 'terraform-destroy') {
+                    echo "TERRAFORM DESTROY COMPLETED"
+                    echo "All AWS resources have been destroyed"
+                    echo "Your AWS bill will stop accumulating charges"
+                }
+                
+                echo "================================================"
+            }
+        }
+        
+        failure {
+            echo '❌❌❌ Pipeline failed! ❌❌❌'
+            echo 'Check the logs above for error details'
+        }
+        
+        unstable {
+            echo '⚠⚠⚠ Pipeline completed with warnings ⚠⚠⚠

@@ -109,32 +109,33 @@ pipeline {
             steps {
                 echo '🔍 Running Security Scan on Docker Images...'
                 script {
-                    // استخدام الخيارات المحسنة
-                    sh """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
-                            aquasec/trivy:latest image \\
-                            --skip-db-update \\
-                            --skip-java-db-update \\
-                            --skip-policy-update \\
-                            --timeout 20m \\
-                            --exit-code 0 \\
-                            --severity HIGH,CRITICAL \\
-                            --format table \\
-                            ${SERVER_IMAGE}:latest
-                    """
-                    
-                    sh """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
-                            aquasec/trivy:latest image \\
-                            --skip-db-update \\
-                            --skip-java-db-update \\
-                            --skip-policy-update \\
-                            --timeout 20m \\
-                            --exit-code 0 \\
-                            --severity HIGH,CRITICAL \\
-                            --format table \\
-                            ${CLIENT_IMAGE}:latest
-                    """
+                    try {
+                        // فحص الصور بدون أي تخطي - دع Trivy يدير قاعدة البيانات بنفسه
+                        sh """
+                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
+                                aquasec/trivy:latest image \\
+                                --timeout 20m \\
+                                --exit-code 0 \\
+                                --severity HIGH,CRITICAL \\
+                                --format table \\
+                                ${SERVER_IMAGE}:latest
+                        """
+                        
+                        sh """
+                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
+                                aquasec/trivy:latest image \\
+                                --timeout 20m \\
+                                --exit-code 0 \\
+                                --severity HIGH,CRITICAL \\
+                                --format table \\
+                                ${CLIENT_IMAGE}:latest
+                        """
+                        
+                    } catch (Exception e) {
+                        echo "⚠ Security scan failed, but continuing pipeline: ${e.message}"
+                        // لا توقف الـ pipeline، فقط اجعله unstable
+                        currentBuild.result = 'UNSTABLE'
+                    }
                 }
             }
         }
@@ -339,7 +340,7 @@ pipeline {
                             export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
                             export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
                             export TF_VAR_mongodb_root_password=$MONGODB_PASSWORD
-                            export TF_Var_jwt_secret=$JWT_SECRET
+                            export TF_VAR_jwt_secret=$JWT_SECRET
                             export TF_VAR_clerk_publishable_key=$CLERK_PUBLISHABLE_KEY
                             export TF_VAR_clerk_secret_key=$CLERK_SECRET_KEY
                             export TF_VAR_backend_image=${SERVER_IMAGE}:latest

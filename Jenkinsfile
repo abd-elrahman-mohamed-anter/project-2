@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     parameters {
         choice(
             name: 'PIPELINE_ACTION',
@@ -8,7 +8,7 @@ pipeline {
             description: 'Select pipeline action: docker-only (Phase 3), terraform-plan/apply/destroy (Phase 4), or full-deploy (both)'
         )
     }
-    
+
     environment {
         // Docker Hub credentials
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
@@ -16,31 +16,31 @@ pipeline {
         CLIENT_IMAGE = "${DOCKERHUB_USERNAME}/hotel-client"
         SERVER_IMAGE = "${DOCKERHUB_USERNAME}/hotel-server"
         IMAGE_TAG = "${BUILD_NUMBER}"
-        
+
         // Frontend environment variables
         VITE_BACKEND_URL = 'http://localhost:3000'
         VITE_CURRENCY = '$'
         CLERK_KEY = credentials('clerk-publishable-key')
         STRIPE_KEY = credentials('stripe-publishable-key')
-        
+
         // AWS Configuration for Terraform
         AWS_DEFAULT_REGION = 'us-east-1'
-        
+
         // Terraform variables - using the images we just built
         TF_VAR_backend_image = "${SERVER_IMAGE}:latest"
         TF_VAR_frontend_image = "${CLIENT_IMAGE}:latest"
     }
-    
+
     stages {
         // ==================== PHASE 3: DOCKER BUILD & PUSH ====================
-        
+
         stage('Checkout') {
             steps {
                 echo '📥 Checking out code from GitHub...'
                 checkout scm
             }
         }
-        
+
         stage('Verify Structure') {
             steps {
                 echo '📂 Checking repository structure...'
@@ -50,12 +50,12 @@ pipeline {
                 bat 'if exist terraform (echo Terraform folder found) else (echo WARNING: Terraform folder NOT found - will skip terraform stages)'
             }
         }
-        
+
         stage('Build Client Image') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -63,25 +63,25 @@ pipeline {
                 script {
                     dir('client') {
                         bat """
-                            docker build ^ 
-                            --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% ^ 
-                            --build-arg VITE_CURRENCY=%VITE_CURRENCY% ^ 
-                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=%CLERK_KEY% ^ 
-                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=%STRIPE_KEY% ^ 
-                            -t %CLIENT_IMAGE%:%IMAGE_TAG% ^ 
-                            -t %CLIENT_IMAGE%:latest ^ 
+                            docker build ^
+                            --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% ^
+                            --build-arg VITE_CURRENCY=%VITE_CURRENCY% ^
+                            --build-arg VITE_CLERK_PUBLISHABLE_KEY=%CLERK_KEY% ^
+                            --build-arg VITE_STRIPE_PUBLISHABLE_KEY=%STRIPE_KEY% ^
+                            -t %CLIENT_IMAGE%:%IMAGE_TAG% ^
+                            -t %CLIENT_IMAGE%:latest ^
                             .
                         """
                     }
                 }
             }
         }
-        
+
         stage('Build Server Image') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -89,55 +89,55 @@ pipeline {
                 script {
                     dir('server') {
                         bat """
-                            docker build ^ 
-                            -t %SERVER_IMAGE%:%IMAGE_TAG% ^ 
-                            -t %SERVER_IMAGE%:latest ^ 
+                            docker build ^
+                            -t %SERVER_IMAGE%:%IMAGE_TAG% ^
+                            -t %SERVER_IMAGE%:latest ^
                             .
                         """
                     }
                 }
             }
         }
-        
+
         stage('Security Scan - Container Images') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
                 echo '🔍 Running Security Scan on Docker Images...'
                 script {
                     bat """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^ 
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
                         aquasec/trivy:latest image %SERVER_IMAGE%:latest --exit-code 0 --severity HIGH,CRITICAL --format table
                     """
                     bat """
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^ 
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
                         aquasec/trivy:latest image %CLIENT_IMAGE%:latest --exit-code 0 --severity HIGH,CRITICAL --format table
                     """
                 }
             }
         }
-        
+
         stage('Test Containers') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
                 echo '🧪 Testing Docker Containers...'
                 script {
                     bat """
-                        docker run -d --name test-backend -p 3000:3000 ^ 
-                        -e CLERK_PUBLISHABLE_KEY=test-key ^ 
-                        -e CLERK_SECRET_KEY=test-secret ^ 
-                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test ^ 
+                        docker run -d --name test-backend -p 3000:3000 ^
+                        -e CLERK_PUBLISHABLE_KEY=test-key ^
+                        -e CLERK_SECRET_KEY=test-secret ^
+                        -e MONGODB_URI=mongodb://test:test@localhost:27017/test ^
                         %SERVER_IMAGE%:latest
-                        
+
                         timeout /t 10 /nobreak
                         curl -f http://localhost:3000/health || echo "Health check failed"
                         docker stop test-backend
@@ -146,12 +146,12 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Login to Docker Hub') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -159,12 +159,12 @@ pipeline {
                 bat "echo %DOCKERHUB_CREDENTIALS_PSW% | docker login -u %DOCKERHUB_CREDENTIALS_USR% --password-stdin"
             }
         }
-        
+
         stage('Push Images to Docker Hub') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -177,12 +177,12 @@ pipeline {
                 """
             }
         }
-        
+
         stage('Docker Cleanup') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'docker-only' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -196,13 +196,13 @@ pipeline {
                 """
             }
         }
-        
+
         // ==================== PHASE 4: TERRAFORM DEPLOYMENT ====================
-        
+
         stage('Setup AWS & Terraform Credentials') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION != 'docker-only' 
+                expression {
+                    params.PIPELINE_ACTION != 'docker-only'
                 }
             }
             steps {
@@ -212,11 +212,11 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Terraform Init') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION != 'docker-only' 
+                expression {
+                    params.PIPELINE_ACTION != 'docker-only'
                 }
             }
             steps {
@@ -235,11 +235,11 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Terraform Validate') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION != 'docker-only' 
+                expression {
+                    params.PIPELINE_ACTION != 'docker-only'
                 }
             }
             steps {
@@ -258,13 +258,13 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Terraform Plan') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-plan' || 
-                    params.PIPELINE_ACTION == 'terraform-apply' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-plan' ||
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -293,12 +293,12 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Terraform Apply') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-apply' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -330,12 +330,12 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Configure kubectl') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-apply' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -355,12 +355,12 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Deploy Security Policies') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-apply' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -372,12 +372,12 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Verify Kubernetes Deployment') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-apply' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -389,12 +389,12 @@ pipeline {
                         kubectl wait --for=condition=ready pod -l app=backend -n hotel-app --timeout=600s || echo "Backend pods not ready yet"
                         kubectl wait --for=condition=ready pod -l app=frontend -n hotel-app --timeout=600s || echo "Frontend pods not ready yet"
                     '''
-                    
+
                     echo '=== Application Status ==='
                     bat 'kubectl get pods -n hotel-app'
                     bat 'kubectl get svc -n hotel-app'
                     bat 'kubectl get ingress -n hotel-app'
-                    
+
                     echo '=== Testing Application Health ==='
                     bat '''
                         kubectl run test-curl --image=curlimages/curl:8.5.0 -n hotel-app --rm -i --restart=Never -- /bin/sh -c "curl -f http://backend:5000/health && echo 'Backend health: OK' || echo 'Backend health: FAILED'"
@@ -402,11 +402,11 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Terraform Destroy') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-destroy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-destroy'
                 }
             }
             steps {
@@ -434,12 +434,12 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Display Terraform Outputs') {
             when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-apply' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
+                expression {
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -459,17 +459,17 @@ pipeline {
             }
         }
     }
-    
+
     post {
         always {
             echo "🏁 Pipeline execution completed"
         }
-        
+
         success {
             script {
                 echo '✅✅✅ Pipeline completed successfully! ✅✅✅'
                 echo "================================================"
-                
+
                 if (params.PIPELINE_ACTION == 'docker-only') {
                     echo "PHASE 3 COMPLETED - Docker Images Pushed"
                     echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
@@ -478,12 +478,12 @@ pipeline {
                     echo "✅ Container tests passed"
                     echo "✅ Images pushed to Docker Hub"
                 }
-                
+
                 if (params.PIPELINE_ACTION == 'terraform-plan') {
                     echo "PHASE 4 - Terraform Plan Completed"
                     echo "Review the plan above and run 'terraform-apply' to deploy"
                 }
-                
+
                 if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'full-deploy') {
                     echo "PHASE 4 COMPLETED - Kubernetes Deployment Successful"
                     echo ""
@@ -500,21 +500,25 @@ pipeline {
                     echo "To access your application:"
                     echo "  kubectl get ingress -n hotel-app"
                 }
-                
+
                 if (params.PIPELINE_ACTION == 'terraform-destroy') {
                     echo "TERRAFORM DESTROY COMPLETED"
                     echo "All AWS resources have been destroyed"
                     echo "Your AWS bill will stop accumulating charges"
                 }
-                
+
                 echo "================================================"
             }
         }
-        
+
         failure {
             echo '❌❌❌ Pipeline failed! ❌❌❌'
             echo 'Check the logs above for error details'
         }
-        
+
         unstable {
-            echo '⚠⚠⚠ Pipeline completed with warnings ⚠⚠⚠
+            echo '⚠⚠⚠ Pipeline completed with warnings ⚠⚠⚠'
+            echo 'Some security scans may have found issues'
+        }
+    }
+}

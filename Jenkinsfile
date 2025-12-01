@@ -147,7 +147,7 @@ pipeline {
                 script {
                     // Test backend health endpoint
                     sh """
-                        docker run -d --name test-backend -p 3000:3000 \\
+                        docker run -d --name test-backend -p 3005:3000 \\
                             -e CLERK_PUBLISHABLE_KEY=test-key \\
                             -e CLERK_SECRET_KEY=test-secret \\
                             -e MONGODB_URI=mongodb://test:test@localhost:27017/test \\

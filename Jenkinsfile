@@ -154,7 +154,7 @@ pipeline {
                             ${SERVER_IMAGE}:latest
                         
                         sleep 10
-                        curl -f http://localhost:3000/health || echo "Health check failed"
+                        curl -f http://localhost:3005/health || echo "Health check failed"
                         docker stop test-backend
                         docker rm test-backend
                     """

@@ -147,6 +147,7 @@ pipeline {
                 script {
                     // Test backend health endpoint
                     sh """
+                        docker rm -f test-backend || true
                         docker run -d --name test-backend -p 3005:3000 \\
                             -e CLERK_PUBLISHABLE_KEY=test-key \\
                             -e CLERK_SECRET_KEY=test-secret \\

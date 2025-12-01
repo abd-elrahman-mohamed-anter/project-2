@@ -146,19 +146,19 @@ pipeline {
                 echo '🧪 Testing Docker Containers...'
                 script {
                     // Test backend health endpoint
-                    sh """
+                    sh '''
                         docker rm -f test-backend || true
-                        docker run -d --name test-backend -p 3005:3000 \\
-                            -e CLERK_PUBLISHABLE_KEY=test-key \\
-                            -e CLERK_SECRET_KEY=test-secret \\
-                            -e MONGODB_URI=mongodb://test:test@localhost:27017/test \\
+                        docker run -d --name test-backend -p 3005:3000 \
+                            -e CLERK_PUBLISHABLE_KEY=test-key \
+                            -e CLERK_SECRET_KEY=test-secret \
+                            -e MONGODB_URI=mongodb://test:test@localhost:27017/test \
                             ${SERVER_IMAGE}:latest
                         
                         sleep 10
                         curl -f http://localhost:3005/health || echo "Health check failed"
                         docker stop test-backend
                         docker rm test-backend
-                    """
+                    '''
                 }
             }
         }

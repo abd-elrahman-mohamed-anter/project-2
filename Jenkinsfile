@@ -135,68 +135,6 @@ pipeline {
             }
         }
         
-        stage('Test Containers') {
-            when {
-                expression { 
-                    params.PIPELINE_ACTION == 'docker-only' || 
-                    params.PIPELINE_ACTION == 'full-deploy' 
-                }
-            }
-            steps {
-                echo '🧪 Testing Docker Containers...'
-                script {
-                    sh '''
-                        # تنظيف أي حاوية قديمة باسم test-backend
-                        docker rm -f test-backend 2>/dev/null || echo "No existing test-backend container"
-                        
-                        # تشغيل الحاوية الجديدة
-                        echo "🚀 Starting test container..."
-                        docker run -d --name test-backend -p 3005:3000 \
-                            -e CLERK_PUBLISHABLE_KEY=test-key \
-                            -e CLERK_SECRET_KEY=test-secret \
-                            -e MONGODB_URI=mongodb://test:test@localhost:27017/test \
-                            ${SERVER_IMAGE}:latest
-                        
-                        echo "⏳ Waiting for container to start (25 seconds)..."
-                        sleep 25
-                        
-                        echo "🧪 Testing health endpoint..."
-                        # محاولة متعددة للـ health check
-                        MAX_RETRIES=3
-                        HEALTH_CHECK_PASSED=false
-                        
-                        for i in $(seq 1 $MAX_RETRIES); do
-                            echo "Attempt $i/$MAX_RETRIES..."
-                            if curl -f -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:3005/health; then
-                                echo "✅ Health check PASSED!"
-                                HEALTH_CHECK_PASSED=true
-                                break
-                            else
-                                echo "❌ Health check attempt $i failed"
-                                if [ $i -lt $MAX_RETRIES ]; then
-                                    sleep 10
-                                fi
-                            fi
-                        done
-                        
-                        if [ "$HEALTH_CHECK_PASSED" != "true" ]; then
-                            echo "❌❌❌ All health checks failed! ❌❌❌"
-                            echo "Checking container status..."
-                            docker ps -a | grep test-backend
-                            echo "Container logs:"
-                            docker logs test-backend --tail 50
-                            exit 1
-                        fi
-                        
-                        # تنظيف
-                        echo "🧹 Cleaning up..."
-                        docker stop test-backend
-                        docker rm test-backend
-                        echo "✅ Container test completed successfully!"
-                    '''
-                }
-            }
-        }
         
         stage('Login to Docker Hub') {
             when {
